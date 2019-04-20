@@ -36,6 +36,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/clique"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/pbft"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -154,6 +155,14 @@ var (
 	}
 	DeveloperPeriodFlag = cli.IntFlag{
 		Name:  "dev.period",
+		Usage: "Block period to use in developer mode (0 = mine only if transaction pending)",
+	}
+	PbftDeveloperFlag = cli.BoolFlag{
+		Name:  "pbftdev",
+		Usage: "pbft network with a pre-funded developer account, mining enabled",
+	}
+	PbftDeveloperPeriodFlag = cli.IntFlag{
+		Name:  "pbftdev.period",
 		Usage: "Block period to use in developer mode (0 = mine only if transaction pending)",
 	}
 	IdentityFlag = cli.StringFlag{
@@ -1113,6 +1122,12 @@ func SetP2PConfig(ctx *cli.Context, cfg *p2p.Config) {
 		cfg.NoDiscovery = true
 		cfg.DiscoveryV5 = false
 	}
+
+	if ctx.GlobalBool(PbftDeveloperFlag.Name) {
+		cfg.MaxPeers = 4
+		cfg.NoDiscovery = true
+		cfg.DiscoveryV5 = false
+	}
 }
 
 // SetNodeConfig applies node-related command line flags to the config.
@@ -1149,6 +1164,8 @@ func setDataDir(ctx *cli.Context, cfg *node.Config) {
 		cfg.DataDir = ctx.GlobalString(DataDirFlag.Name)
 	case ctx.GlobalBool(DeveloperFlag.Name):
 		cfg.DataDir = "" // unless explicitly requested, use memory databases
+	case ctx.GlobalBool(PbftDeveloperFlag.Name):
+		cfg.DataDir = filepath.Join(node.DefaultDataDir(), "pbft")
 	case ctx.GlobalBool(TestnetFlag.Name):
 		cfg.DataDir = filepath.Join(node.DefaultDataDir(), "testnet")
 	case ctx.GlobalBool(RinkebyFlag.Name):
@@ -1451,6 +1468,32 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *eth.Config) {
 		if !ctx.GlobalIsSet(MinerGasPriceFlag.Name) && !ctx.GlobalIsSet(MinerLegacyGasPriceFlag.Name) {
 			cfg.MinerGasPrice = big.NewInt(1)
 		}
+	case ctx.GlobalBool(PbftDeveloperFlag.Name):
+		if !ctx.GlobalIsSet(NetworkIdFlag.Name) {
+			cfg.NetworkId = 1338
+		}
+		// Create new developer account or reuse existing one
+		var (
+			developer accounts.Account
+			err       error
+		)
+		if accs := ks.Accounts(); len(accs) > 0 {
+			developer = ks.Accounts()[0]
+		} else {
+			developer, err = ks.NewAccount("")
+			if err != nil {
+				Fatalf("Failed to create developer account: %v", err)
+			}
+		}
+		if err := ks.Unlock(developer, ""); err != nil {
+			Fatalf("Failed to unlock developer account: %v", err)
+		}
+		log.Info("Using developer account", "address", developer.Address)
+
+		cfg.Genesis = core.PbftDeveloperGenesisBlock(uint64(ctx.GlobalInt(PbftDeveloperPeriodFlag.Name)), developer.Address)
+		if !ctx.GlobalIsSet(MinerGasPriceFlag.Name) && !ctx.GlobalIsSet(MinerLegacyGasPriceFlag.Name) {
+			cfg.MinerGasPrice = big.NewInt(1)
+		}
 	}
 }
 
@@ -1582,6 +1625,8 @@ func MakeGenesis(ctx *cli.Context) *core.Genesis {
 		genesis = core.DefaultGoerliGenesisBlock()
 	case ctx.GlobalBool(DeveloperFlag.Name):
 		Fatalf("Developer chains are ephemeral")
+	case ctx.GlobalBool(PbftDeveloperFlag.Name):
+		Fatalf("Developer chains are ephemeral")
 	}
 	return genesis
 }
@@ -1595,7 +1640,9 @@ func MakeChain(ctx *cli.Context, stack *node.Node) (chain *core.BlockChain, chai
 		Fatalf("%v", err)
 	}
 	var engine consensus.Engine
-	if config.Clique != nil {
+	if config.Pbft != nil {
+		engine = pbft.New(config.Pbft, chainDb)
+	} else if config.Clique != nil {
 		engine = clique.New(config.Clique, chainDb)
 	} else {
 		engine = ethash.NewFaker()

@@ -472,6 +472,9 @@ func (lc *LightChain) SyncCht(ctx context.Context) bool {
 	sections, _, _ := lc.odr.ChtIndexer().Sections()
 
 	latest := sections*lc.indexerConfig.ChtSize - 1
+	if pbft := lc.hc.Config().Pbft; pbft != nil {
+		//latest -= latest % clique.Epoch // epoch snapshot for clique
+	}
 	if clique := lc.hc.Config().Clique; clique != nil {
 		latest -= latest % clique.Epoch // epoch snapshot for clique
 	}

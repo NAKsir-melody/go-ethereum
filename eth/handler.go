@@ -214,6 +214,7 @@ func (pm *ProtocolManager) removePeer(id string) {
 }
 
 func (pm *ProtocolManager) Start(maxPeers int) {
+	log.Info("Starting Ethereum protocol")
 	pm.maxPeers = maxPeers
 
 	// broadcast transactions
@@ -769,8 +770,10 @@ func (pm *ProtocolManager) BroadcastTxs(txs types.Transactions) {
 // Mined broadcast loop
 func (pm *ProtocolManager) minedBroadcastLoop() {
 	// automatically stops if unsubscribe
+    log.Trace("minedBroadcastLoop")
 	for obj := range pm.minedBlockSub.Chan() {
 		if ev, ok := obj.Data.(core.NewMinedBlockEvent); ok {
+		    log.Trace("Broadcast minedBlock")
 			pm.BroadcastBlock(ev.Block, true)  // First propagate block to peers
 			pm.BroadcastBlock(ev.Block, false) // Only then announce to the rest
 		}

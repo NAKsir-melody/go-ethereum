@@ -31,6 +31,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/clique"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/pbft"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/bloombits"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -226,6 +227,10 @@ func makeExtraData(extra []byte) []byte {
 
 // CreateConsensusEngine creates the required type of consensus engine instance for an Ethereum service
 func CreateConsensusEngine(ctx *node.ServiceContext, chainConfig *params.ChainConfig, config *ethash.Config, notify []string, noverify bool, db ethdb.Database) consensus.Engine {
+	// If Pbft requested
+	if chainConfig.Pbft != nil {
+		return pbft.New(chainConfig.Pbft, db)
+	}
 	// If proof-of-authority is requested, set it up
 	if chainConfig.Clique != nil {
 		return clique.New(chainConfig.Clique, db)
@@ -391,6 +396,9 @@ func (s *Ethereum) shouldPreserve(block *types.Block) bool {
 	// is A, F and G sign the block of round5 and reject the block of opponents
 	// and in the round6, the last available signer B is offline, the whole
 	// network is stuck.
+	if _, ok := s.engine.(*pbft.Pbft); ok {
+		return false
+	}
 	if _, ok := s.engine.(*clique.Clique); ok {
 		return false
 	}
@@ -435,6 +443,14 @@ func (s *Ethereum) StartMining(threads int) error {
 			log.Error("Cannot start mining without etherbase", "err", err)
 			return fmt.Errorf("etherbase missing: %v", err)
 		}
+		if pbft, ok := s.engine.(*pbft.Pbft); ok {
+			wallet, err := s.accountManager.Find(accounts.Account{Address: eb})
+			if wallet == nil || err != nil {
+				log.Error("Etherbase account unavailable locally", "err", err)
+				return fmt.Errorf("signer missing: %v", err)
+			}
+			pbft.Authorize(eb, wallet.SignData)
+		}
 		if clique, ok := s.engine.(*clique.Clique); ok {
 			wallet, err := s.accountManager.Find(accounts.Account{Address: eb})
 			if wallet == nil || err != nil {
@@ -443,6 +459,7 @@ func (s *Ethereum) StartMining(threads int) error {
 			}
 			clique.Authorize(eb, wallet.SignData)
 		}
+
 		// If mining is started, we can disable the transaction rejection mechanism
 		// introduced to speed sync times.
 		atomic.StoreUint32(&s.protocolManager.acceptTxs, 1)

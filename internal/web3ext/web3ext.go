@@ -21,6 +21,7 @@ var Modules = map[string]string{
 	"accounting": AccountingJs,
 	"admin":      AdminJs,
 	"chequebook": ChequebookJs,
+	"pbft":       PbftJs,
 	"clique":     CliqueJs,
 	"ethash":     EthashJs,
 	"debug":      DebugJs,
@@ -60,6 +61,19 @@ web3._extend({
 			call: 'chequebook_issue',
 			params: 2,
 			inputFormatter: [null, null]
+		}),
+	]
+});
+`
+const PbftJs = `
+web3._extend({
+	property: 'pbft',
+	methods: [
+		new web3._extend.Method({
+			name: 'addClient',
+			call: 'pbft_addClient',
+			params: 1,
+			inputFormatter: [null]
 		}),
 	]
 });

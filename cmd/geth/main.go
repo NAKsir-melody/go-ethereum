@@ -129,6 +129,8 @@ var (
 		utils.NodeKeyHexFlag,
 		utils.DeveloperFlag,
 		utils.DeveloperPeriodFlag,
+		utils.PbftDeveloperFlag,
+		utils.PbftDeveloperPeriodFlag,
 		utils.TestnetFlag,
 		utils.RinkebyFlag,
 		utils.GoerliFlag,
@@ -401,9 +403,11 @@ func startNode(ctx *cli.Context, stack *node.Node) {
 		if ctx.GlobalIsSet(utils.MinerThreadsFlag.Name) {
 			threads = ctx.GlobalInt(utils.MinerThreadsFlag.Name)
 		}
+        if ! ctx.GlobalBool(utils.PbftDeveloperFlag.Name) {
 		if err := ethereum.StartMining(threads); err != nil {
 			utils.Fatalf("Failed to start mining: %v", err)
 		}
+        }
 	}
 }
 

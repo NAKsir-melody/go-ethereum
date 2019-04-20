@@ -793,6 +793,7 @@ func (bc *BlockChain) Rollback(chain []common.Hash) {
 // InsertReceiptChain attempts to complete an already existing header chain with
 // transaction and receipt data.
 func (bc *BlockChain) InsertReceiptChain(blockChain types.Blocks, receiptChain []types.Receipts) (int, error) {
+
 	bc.wg.Add(1)
 	defer bc.wg.Done()
 
@@ -1018,7 +1019,9 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 		rawdb.WritePreimages(batch, state.Preimages())
 
 		status = CanonStatTy
+        fmt.Printf("========aaa3=========\n")
 	} else {
+        fmt.Printf("========aaa4=========\n")
 		status = SideStatTy
 	}
 	if err := batch.Write(); err != nil {
@@ -1052,6 +1055,7 @@ func (bc *BlockChain) addFutureBlock(block *types.Block) error {
 //
 // After insertion is done, all accumulated events will be fired.
 func (bc *BlockChain) InsertChain(chain types.Blocks) (int, error) {
+    fmt.Printf("===================InsertChain=================\n")
 	// Sanity check that we have something meaningful to import
 	if len(chain) == 0 {
 		return 0, nil
@@ -1097,6 +1101,7 @@ func (bc *BlockChain) InsertChain(chain types.Blocks) (int, error) {
 // is imported, but then new canon-head is added before the actual sidechain
 // completes, then the historic state could be pruned again
 func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, []interface{}, []*types.Log, error) {
+    fmt.Printf("===================insertChain=================\n")
 	// If the chain is terminating, don't even bother starting up
 	if atomic.LoadInt32(&bc.procInterrupt) == 1 {
 		return 0, nil, nil, nil
@@ -1131,6 +1136,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, []
 
 	// Left-trim all the known blocks
 	if err == ErrKnownBlock {
+    fmt.Printf("===================ErrKnownBlock=================\n")
 		// First block (and state) is known
 		//   1. We did a roll-back, and should now do a re-import
 		//   2. The block is stored as a sidechain, and is lying about it's stateroot, and passes a stateroot
@@ -1147,10 +1153,12 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, []
 	switch {
 	// First block is pruned, insert as sidechain and reorg only if TD grows enough
 	case err == consensus.ErrPrunedAncestor:
+    fmt.Printf("========a=========\n")
 		return bc.insertSidechain(block, it)
 
 	// First block is future, shove it (and all children) to the future queue (unknown ancestor)
 	case err == consensus.ErrFutureBlock || (err == consensus.ErrUnknownAncestor && bc.futureBlocks.Contains(it.first().ParentHash())):
+    fmt.Printf("========b=========\n")
 		for block != nil && (it.index == 0 || err == consensus.ErrUnknownAncestor) {
 			if err := bc.addFutureBlock(block); err != nil {
 				return it.index, events, coalescedLogs, err
@@ -1165,12 +1173,14 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, []
 
 	// Some other error occurred, abort
 	case err != nil:
+    fmt.Printf("========c=========\n")
 		stats.ignored += len(it.chain)
 		bc.reportBlock(block, nil, err)
 		return it.index, events, coalescedLogs, err
 	}
 	// No validation errors for the first block (or chain prefix skipped)
 	for ; block != nil && err == nil; block, err = it.next() {
+    fmt.Printf("========d=========\n")
 		// If the chain is terminating, stop processing blocks
 		if atomic.LoadInt32(&bc.procInterrupt) == 1 {
 			log.Debug("Premature abort during blocks processing")
@@ -1178,6 +1188,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, []
 		}
 		// If the header is a banned one, straight out abort
 		if BadHashes[block.Hash()] {
+    fmt.Printf("========e=========\n")
 			bc.reportBlock(block, nil, ErrBlacklistedHash)
 			return it.index, events, coalescedLogs, ErrBlacklistedHash
 		}
@@ -1190,6 +1201,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, []
 		}
 		statedb, err := state.New(parent.Root, bc.stateCache)
 		if err != nil {
+    fmt.Printf("========f=========\n")
 			return it.index, events, coalescedLogs, err
 		}
 		// If we have a followup block, run that against the current state to pre-cache
@@ -1213,6 +1225,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, []
 		substart := time.Now()
 		receipts, logs, usedGas, err := bc.processor.Process(block, statedb, bc.vmConfig)
 		if err != nil {
+    fmt.Printf("========g=========\n")
 			bc.reportBlock(block, receipts, err)
 			atomic.StoreUint32(&followupInterrupt, 1)
 			return it.index, events, coalescedLogs, err
@@ -1232,6 +1245,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, []
 		// Validate the state using the default validator
 		substart = time.Now()
 		if err := bc.validator.ValidateState(block, statedb, receipts, usedGas); err != nil {
+    fmt.Printf("========h=========\n")
 			bc.reportBlock(block, receipts, err)
 			atomic.StoreUint32(&followupInterrupt, 1)
 			return it.index, events, coalescedLogs, err
@@ -1248,6 +1262,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, []
 		substart = time.Now()
 		status, err := bc.writeBlockWithState(block, receipts, statedb)
 		if err != nil {
+    fmt.Printf("========i=========\n")
 			atomic.StoreUint32(&followupInterrupt, 1)
 			return it.index, events, coalescedLogs, err
 		}
@@ -1262,7 +1277,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, []
 
 		switch status {
 		case CanonStatTy:
-			log.Debug("Inserted new block", "number", block.Number(), "hash", block.Hash(),
+			log.Info("Inserted new block", "number", block.Number(), "hash", block.Hash(),
 				"uncles", len(block.Uncles()), "txs", len(block.Transactions()), "gas", block.GasUsed(),
 				"elapsed", common.PrettyDuration(time.Since(start)),
 				"root", block.Root())
@@ -1275,7 +1290,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, []
 			bc.gcproc += proctime
 
 		case SideStatTy:
-			log.Debug("Inserted forked block", "number", block.Number(), "hash", block.Hash(),
+			log.Info("Inserted forked block", "number", block.Number(), "hash", block.Hash(),
 				"diff", block.Difficulty(), "elapsed", common.PrettyDuration(time.Since(start)),
 				"txs", len(block.Transactions()), "gas", block.GasUsed(), "uncles", len(block.Uncles()),
 				"root", block.Root())
@@ -1289,6 +1304,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, []
 	}
 	// Any blocks remaining here? The only ones we care about are the future ones
 	if block != nil && err == consensus.ErrFutureBlock {
+    fmt.Printf("========j=========\n")
 		if err := bc.addFutureBlock(block); err != nil {
 			return it.index, events, coalescedLogs, err
 		}
@@ -1305,6 +1321,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, []
 
 	// Append a single chain head event if we've progressed the chain
 	if lastCanon != nil && bc.CurrentBlock().Hash() == lastCanon.Hash() {
+    fmt.Printf("========k=========\n")
 		events = append(events, ChainHeadEvent{lastCanon})
 	}
 	return it.index, events, coalescedLogs, err
